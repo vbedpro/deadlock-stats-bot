@@ -8,32 +8,25 @@ async function getMatchHistory(accountId) {
 
 async function getCurrentRank(accountId) {
   const res = await fetch(`${BASE}/v1/players/${accountId}/rank`);
-  if (!res.ok) return null;
-  return res.json();
+  if (!res.ok) throw new Error(`rank failed for ${accountId}: ${res.status}`);
+  return res.json(); // { badge, rank, subrank, last_match: {...} }
 }
 
 /**
- * Builds the 24h stat block for one account: current rank badge, elo delta
- * since 24h ago, and games played in that window.
+ * Builds the 24h stat block for one account: current rank (rank+subrank,
+ * straight from the /rank endpoint -- no badge-decoding involved), and
+ * wins/losses over the last 24h. A match is a win when the player's team
+ * (player_team) matches the winning team (match_result).
  */
 async function getPlayerDailyStats(accountId) {
-  const history = await getMatchHistory(accountId);
+  const [history, rank] = await Promise.all([getMatchHistory(accountId), getCurrentRank(accountId)]);
   const cutoff = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
 
-  const sorted = [...history].sort((a, b) => b.start_time - a.start_time);
-  const recent = sorted.filter((m) => m.start_time >= cutoff);
+  const recent = history.filter((m) => m.start_time >= cutoff);
+  const wins = recent.filter((m) => m.match_result === m.player_team).length;
+  const losses = recent.length - wins;
 
-  const eloDelta = recent.reduce((sum, m) => sum + (m.ranked_delta ?? 0), 0);
-  const gamesPlayed = recent.length;
-
-  // Current rank: latest match with a badge, falling back to the /rank endpoint.
-  let currentBadge = sorted.find((m) => m.ranked_display_badge !== null)?.ranked_display_badge ?? null;
-  if (currentBadge === null) {
-    const rank = await getCurrentRank(accountId);
-    currentBadge = rank?.rank ?? rank?.ranked_display_badge ?? null;
-  }
-
-  return { accountId, currentBadge, eloDelta, gamesPlayed };
+  return { accountId, rank: rank?.rank ?? null, subrank: rank?.subrank ?? null, wins, losses, gamesPlayed: recent.length };
 }
 
 module.exports = { getMatchHistory, getCurrentRank, getPlayerDailyStats };

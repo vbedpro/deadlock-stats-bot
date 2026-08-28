@@ -7,11 +7,14 @@ const { buildDailyReport } = require('./report');
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 function chunkMessage(text) {
-  // Discord messages cap at 2000 chars; split on lines if the report is long.
+  // Discord messages cap at 2000 chars; split on lines if the report is long,
+  // leaving room for the ```ansi fence wrapper each chunk gets before sending.
+  const FENCE_OVERHEAD = 20;
+  const LIMIT = 1900 - FENCE_OVERHEAD;
   const chunks = [];
   let current = '';
   for (const line of text.split('\n')) {
-    if ((current + '\n' + line).length > 1900) {
+    if ((current + '\n' + line).length > LIMIT) {
       chunks.push(current);
       current = line;
     } else {
@@ -19,7 +22,7 @@ function chunkMessage(text) {
     }
   }
   if (current) chunks.push(current);
-  return chunks;
+  return chunks.map((c) => '```ansi\n' + c + '\n```');
 }
 
 async function postDailyReportForGuild(guildId, reportChannelId) {
